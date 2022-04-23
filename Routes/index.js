@@ -7,7 +7,7 @@ module.exports = app => {
   const { body } = require("express-validator")
 
   // index
-  router.get("/", (req, res) => {
+  app.get("/", (req, res) => {
     return res.status(200).send({ message: "Welcome express mysql application." });
   });
 
