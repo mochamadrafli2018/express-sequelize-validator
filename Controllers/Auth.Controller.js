@@ -1,8 +1,7 @@
 const User = require("../Models").User;
-const createError = require('http-errors')
-const { registerSchema, loginSchema } = require('../helpers/validation_schema')
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
+const createError = require('http-errors');
+const { validationResult } = require("express-validator");
 const {
   signAccessToken,
   verifyAccessToken,
@@ -11,64 +10,80 @@ const {
 module.exports = {
   register: async (req, res, next) => {
     try {
-      // validation
-      // if (!name || !email || !password || !gender || !role) throw createError.BadRequest()
-      const body = await registerSchema.validateAsync(req.body)
+			// Extract the validation errors from a request.
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+        return res.status(400).json({
+          message: "Validation Error.",
+          errors: errors.array()
+        });
+      }
+
+      console.log(req.body);
       // if email already exist
       const doesExist = await User.findOne({
-        where: {
-          email: req.body.email
-        }
+        where: { email: req.body.email }
       })
-      if (doesExist)
-        throw createError.Conflict(`${body.email} is already been registered`)
-      const user = new User(body)
-      // hash password asynchronously
-      // const encryptedPassword = bcrypt.hashSync(req.body.password, 10);
-      const salt = await bcrypt.genSalt(10)
+      if (doesExist) 
+        throw createError.Conflict(`${req.body.email} is already been registered`) // 409
+      const user = new User(req.body)
+      
+      // hash password
+      // const encryptedPassword = bcrypt.hashSync(req.body.password, 10); // synchronously
+      const salt = await bcrypt.genSalt(10) // asynchronously
       const hashedPassword = await bcrypt.hash(user.password, salt)
       user.password = hashedPassword
-      
+        
       const savedUser = await user.save()
       console.log(savedUser.id)
 
       const accessToken = await signAccessToken(savedUser.id)
-      console.log(accessToken)      
-      res.status(200).send({
-        id: savedUser.id,
-        accessToken: accessToken
+      console.log(accessToken)
+
+      return res.status(200).send({ 
+        message: 'success',
+        user: {
+          id: savedUser.id,
+          name: savedUser.name,
+          email: savedUser.email,
+          role: savedUser.role,
+        },
+        token: accessToken,
       })
     } catch (error) {
-      if (error.isJoi === true) error.status = 422
       next(error)
     }
   },
 
   login: async (req, res, next) => {
     try {
-      // validation
-      const body = await loginSchema.validateAsync(req.body)
+			// Extract the validation errors from a request.
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+        return res.status(400).json({
+          message: "Validation Error.",
+          errors: errors.array()
+        });
+      }
+      
+      console.log(req.body);
       // if email not exist
-      const user = await User.findOne({
-        where: {
-          email: req.body.email
-        }
-      })
-      if (!user) throw createError.NotFound('User not registered')
+      const user = await User.findOne({ where: { email: req.body.email } })
+      if (!user) throw createError.NotFound('User not registered') // 404
       console.log(user.id)
-      // comparing passwords asynchronously
-      // const passwordIsValid = bcrypt.compareSync(req.body.password, user.password);
-      const isMatch = await bcrypt.compare(body.password, user.password);
-      if (!isMatch)
-        throw createError.Unauthorized('Email/password not valid')
+
+      // if password is not match
+      // const isMatch = bcrypt.compareSync(req.body.password, user.password); // synchronously
+      const isMatch = await bcrypt.compare(req.body.password, user.password); // asynchronously
+      if (!isMatch) throw createError.Unauthorized('Email/password not valid') // 401
       console.log(isMatch)
 
       const accessToken = await signAccessToken(user.id)
       console.log(accessToken)
 
-      res.status(200).send({ 
+      return res.status(200).send({ 
         user: {
-          id: user._id,
+          id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -90,7 +105,6 @@ module.exports = {
     const bearerToken = authHeader.split(' ')
     const token = bearerToken[1]
     // decoded JWT Token
-    // const decodedResult = jwt.verify(token, process.env.JWT_SECRET);
     const decodedResult = await verifyAccessToken(token)
     console.log(decodedResult.id)
 
